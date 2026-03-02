@@ -1,0 +1,52 @@
+# ============================================================
+#  Job Scout Agent — Configuration
+#  Edit this file to customize your job search.
+# ============================================================
+
+# --- What to search for ---
+search_queries:
+  - "Software Engineer"
+  - "AI Engineer"
+  - "Machine Learning Engineer"
+
+# --- Where to search ---
+# Use city names that LinkedIn/Indeed recognise for India.
+locations:
+  - "Bangalore, Karnataka, India"
+  - "Mumbai, Maharashtra, India"
+  - "Hyderabad, Telangana, India"
+  - "Remote"
+
+# --- Job type filter ---
+# Options: fulltime | parttime | contract | internship
+job_types:
+  - "fulltime"
+
+# --- Platforms to search ---
+# Options: linkedin | indeed
+# Note: ZipRecruiter and Glassdoor have very limited India coverage — excluded.
+site_names:
+  - "linkedin"
+  - "indeed"
+
+# --- Country setting for Indeed scraper ---
+# Must be set to "india" to get Indian Indeed results
+country_indeed: "india"
+
+# --- How many results per site per query (per location) ---
+results_wanted: 10
+
+# --- Hard cap on TOTAL jobs returned (for Serper API to limit usage) ---
+max_total_results: 10
+
+# --- Only fetch jobs posted within this many hours ---
+hours_old: 72
+
+# --- Retry logic (borrowed from ApplyPilot) ---
+retry_attempts: 3
+retry_backoff_seconds: 5
+
+# --- Link verification settings ---
+verify_links: true          # Set to false to skip HTTP verification (faster but less safe)
+verify_timeout_seconds: 8   # HTTP timeout per link
+verify_workers: 10          # Number of parallel threads for verification

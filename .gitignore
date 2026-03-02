@@ -1,0 +1,31 @@
+# Environment variables — NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# macOS
+.DS_Store
+
+# Output files
+scouted_jobs.csv
+temp/
+
+# Logs
+*.log
+Mini-Agent
