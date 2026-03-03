@@ -90,8 +90,9 @@ TOOLS = [
         "function": {
             "name": "google_search",
             "description": (
-                "Search the web with Google (Serper API). Useful for finding extra "
-                "job posts on company career pages or getting company/role context."
+                "Search the web with Google (Serper API). Use this for salary research, "
+                "company reputation, stipend details, or any follow-up question about "
+                "previously listed jobs. Also useful when LinkedIn returns sparse results."
             ),
             "parameters": {
                 "type": "object",
@@ -111,8 +112,8 @@ TOOLS = [
             "name": "scrape_website",
             "description": (
                 "Scrape text content of any webpage. Use it to get full job "
-                "descriptions, salary info, or application instructions from "
-                "a careers page or job board URL."
+                "descriptions, salary info, stipend, or application instructions from "
+                "a careers page or job board URL found in a previous search."
             ),
             "parameters": {
                 "type": "object",
@@ -130,7 +131,9 @@ TOOLS = [
 
 # ── System prompt ────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = (
-    "You are an expert AI Job Search Assistant specializing in the Indian job market.\n\n"
+    "You are an expert AI Job Search Assistant specializing in the Indian job market. "
+    "You have a PERSISTENT MEMORY of the entire conversation — you remember every job you have listed "
+    "and every question the user has asked before.\n\n"
 
     "## CRITICAL: NLP Parsing Rules — read BEFORE calling any tool\n\n"
 
@@ -158,23 +161,33 @@ SYSTEM_PROMPT = (
     "### 4. Employment type\n"
     "  'internship' -> employment_type='internship'\n"
     "  'full time' -> employment_type='full-time'\n"
-    "  'contract' -> employment_type='contract'\n"
-    "  'part time' -> employment_type='part-time'\n\n"
+    "  'contract' -> employment_type='contract'\n\n"
 
-    "### 5. Limit\n"
-    "If user says 'find me 3' or 'show 5' -> set limit to that number.\n\n"
+    "### 5. Limit — if user says 'find me 3' or 'show 5' -> set limit to that number.\n\n"
 
-    "## Search Strategy\n"
+    "## Follow-up questions about previously listed jobs\n"
+    "When the user asks a follow-up question about jobs already listed in this conversation "
+    "(e.g. 'which pays more?', 'which has the highest stipend?', 'tell me more about job 2'), "
+    "you MUST:\n"
+    "  1. Look at the jobs already listed in your conversation history.\n"
+    "  2. Use google_search to research salary/stipend/reputation for each company.\n"
+    "     Example query: '[Company Name] internship stipend India 2024' or '[Company Name] salary India Glassdoor'\n"
+    "  3. If a job's apply_link is available, use scrape_website on that URL to check if salary is mentioned.\n"
+    "  4. Compare and present findings clearly with sources.\n"
+    "  NEVER say 'I don't have the jobs listed' — you have full conversation history.\n\n"
+
+    "## Search strategy (for new job searches)\n"
     "1. ALWAYS call linkedin_job_search first with correctly parsed params.\n"
-    "2. If results look wrong (wrong country, irrelevant roles), call it again with refined keywords.\n"
+    "2. If results look wrong (wrong country, irrelevant roles), refine and retry.\n"
     "3. Use google_search only if LinkedIn returns 0 results.\n\n"
 
-    "## Output Format\n"
+    "## Output format\n"
     "**[Job Title]** — [Company] | [Location]\n"
-    "Applicants: [count if available] | Posted: [time]\n"
-    "Description: [1-2 sentences]\n"
+    "Applicants: [count] | Posted: [time]\n"
+    "Description: [1-2 sentence highlight]\n"
     "Apply: [link]\n\n"
-    "If results seem off-target, say so clearly and offer to refine."
+    "If results seem off-target, say so and offer to refine.\n"
+    "Type 'new search' or 'reset' to clear conversation history."
 )
 
 # ── Tool dispatcher ──────────────────────────────────────────────────────────
@@ -215,20 +228,33 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
         return f"Tool '{tool_name}' error: {e}"
 
 
+# ── Persistent conversation history ──────────────────────────────────────────
+# Starts with just the system message; user turns are appended across queries.
+conversation_history = [
+    {"role": "system", "content": SYSTEM_PROMPT}
+]
+
+
 # ── Agentic loop ─────────────────────────────────────────────────────────────
 def run_agent(user_query: str):
-    """Run the agentic tool-use loop for one user query."""
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": user_query},
-    ]
+    """Append user query to persistent history and run the agentic loop."""
+    global conversation_history
 
-    print(f"\n🔍 Searching: {user_query}\n")
+    # Reset command
+    if user_query.lower().strip() in {"new search", "reset", "clear"}:
+        conversation_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        print("🔄 Conversation reset. Starting fresh!\n")
+        return
+
+    # Append user message to running history
+    conversation_history.append({"role": "user", "content": user_query})
+
+    print(f"\n🔍 Processing: {user_query}\n")
 
     while True:
         response = client.chat.completions.create(
             model=MODEL,
-            messages=messages,
+            messages=conversation_history,
             tools=TOOLS,
             tool_choice="auto",
             max_tokens=2048,
@@ -237,8 +263,8 @@ def run_agent(user_query: str):
         msg = response.choices[0].message
         finish_reason = response.choices[0].finish_reason
 
-        # Add assistant message to history
-        messages.append(msg)
+        # Add assistant turn to persistent history
+        conversation_history.append(msg)
 
         # ── Final answer ─────────────────────────────────────────────────────
         if finish_reason == "stop" or not msg.tool_calls:
@@ -256,11 +282,10 @@ def run_agent(user_query: str):
                 print(f"   Args:   {json.dumps(tool_input, indent=2)}")
 
                 result = dispatch_tool(tool_name, tool_input)
-
                 print(f"📥 Got {len(result)} chars back\n")
 
-                # Feed the tool result back
-                messages.append({
+                # Append tool result to persistent history
+                conversation_history.append({
                     "role": "tool",
                     "tool_call_id": tool_id,
                     "content": result,
@@ -269,15 +294,16 @@ def run_agent(user_query: str):
 
 # ── Main REPL ─────────────────────────────────────────────────────────────────
 def main():
-    print("╔══════════════════════════════════════════╗")
-    print("║       🧑‍💼  AI Job Search Agent  🧑‍💼        ║")
-    print("║      GPT-4o-mini via OpenRouter          ║")
-    print("╚══════════════════════════════════════════╝")
+    print("╔══════════════════════════════════════════════╗")
+    print("║       🧑‍💼  AI Job Search Agent  🧑‍💼            ║")
+    print("║  GPT-4o-mini · OpenRouter · Memory Enabled  ║")
+    print("╚══════════════════════════════════════════════╝")
     print("\nExamples:")
     print("  • Find me 3 internships in startups in India")
-    print("  • Remote data science jobs posted today")
-    print("  • Entry-level ML engineer roles in Bangalore\n")
-    print("Type 'exit' or 'quit' to stop.\n")
+    print("  • Remote AIML engineer jobs in India")
+    print("  • Which of those companies pays the most?")
+    print("  • Tell me more about job 2")
+    print("\nType 'reset' to clear memory | 'exit' to quit.\n")
 
     while True:
         try:
